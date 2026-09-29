@@ -57,7 +57,35 @@ public class AccountService {
     }
 
     public ResultCode login(String username, String password) {
-        throw new UnsupportedOperationException("TODO");
+        // BR-LOG-01
+        if (isBlank(username) || isBlank(password)) {
+            return ResultCode.INVALID_INPUT;
+        }
+        // BR-LOG-02, 03 (user không tồn tại)
+        Account account = accounts.get(key(username));
+        if (account == null) {
+            return ResultCode.INVALID_CREDENTIALS;
+        }
+        // BR-LOG-04
+        if (account.getStatus() == AccountStatus.DISABLED) {
+            return ResultCode.ACCOUNT_DISABLED;
+        }
+        // BR-LOG-06: đang khóa -> từ chối, không tăng bộ đếm
+        if (account.isLocked()) {
+            return ResultCode.ACCOUNT_LOCKED;
+        }
+        // BR-LOG-03, 05: sai mật khẩu
+        if (!PasswordHasher.matches(account.getSalt(), password, account.getCurrentPasswordHash())) {
+            account.incrementFailedAttempts();
+            if (account.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) {
+                account.lock();
+                return ResultCode.ACCOUNT_LOCKED;
+            }
+            return ResultCode.INVALID_CREDENTIALS;
+        }
+        // BR-LOG-08
+        account.resetFailedAttempts();
+        return ResultCode.SUCCESS;
     }
 
     public ResultCode changePassword(String username, String oldPassword,
@@ -75,11 +103,21 @@ public class AccountService {
     }
 
     public ResultCode disableAccount(String username) {
-        throw new UnsupportedOperationException("TODO");
+        Optional<Account> account = findByUsername(username);
+        if (account.isEmpty()) {
+            return ResultCode.USER_NOT_FOUND;
+        }
+        account.get().setStatus(AccountStatus.DISABLED);
+        return ResultCode.SUCCESS;
     }
 
     public ResultCode unlockAccount(String username) {
-        throw new UnsupportedOperationException("TODO");
+        Optional<Account> account = findByUsername(username);
+        if (account.isEmpty()) {
+            return ResultCode.USER_NOT_FOUND;
+        }
+        account.get().unlock();
+        return ResultCode.SUCCESS;
     }
 
     /** Tra cứu không phân biệt hoa/thường; null/blank/không tồn tại -> Optional.empty(). */
